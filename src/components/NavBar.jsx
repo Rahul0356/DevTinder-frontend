@@ -1,9 +1,9 @@
-
 import axios from "axios";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, useNavigate } from "react-router-dom";
 import { BASE_URL } from "../utils/constants";
 import { removeUser } from "../utils/userSlice";
+import Theme from "./Theme";
 
 const NavBar = () => {
   const user = useSelector((store) => store.user);
@@ -60,6 +60,9 @@ const NavBar = () => {
               </li>
               <li>
                 <Link to="/premium">Premium</Link>
+              </li>
+              <li>
+               <Theme />
               </li>
               <li>
                 <a onClick={handleLogout}>Logout</a>
