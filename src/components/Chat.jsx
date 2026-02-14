@@ -1,5 +1,4 @@
-
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { createSocketConnection } from "../utils/socket";
 import { useSelector } from "react-redux";
@@ -12,60 +11,95 @@ const Chat = () => {
   const [newMessage, setNewMessage] = useState("");
   const user = useSelector((store) => store.user);
   const userId = user?._id;
+  
+  // Use ref to store socket instance
+  const socketRef = useRef(null);
 
   const fetchChatMessages = async () => {
-    const chat = await axios.get(BASE_URL + "/chat/" + targetUserId, {
-      withCredentials: true,
-    });
+    try {
+      const chat = await axios.get(BASE_URL + "/chat/" + targetUserId, {
+        withCredentials: true,
+      });
 
-    console.log(chat.data.messages);
+      console.log(chat.data.messages);
 
-    const chatMessages = chat?.data?.messages.map((msg) => {
-      const { senderId, text } = msg;
-      return {
-        firstName: senderId?.firstName,
-        lastName: senderId?.lastName,
-        text,
-      };
-    });
-    setMessages(chatMessages);
+      const chatMessages = chat?.data?.messages.map((msg) => {
+        const { senderId, text } = msg;
+        return {
+          firstName: senderId?.firstName,
+          lastName: senderId?.lastName,
+          text,
+        };
+      });
+      setMessages(chatMessages);
+    } catch (error) {
+      console.error("Error fetching chat messages:", error);
+      // Handle 404 or other errors
+      if (error.response?.status === 404) {
+        console.log("No existing chat found, starting new conversation");
+        setMessages([]);
+      }
+    }
   };
+
   useEffect(() => {
     fetchChatMessages();
-  }, []);
+  }, [targetUserId]); // Add targetUserId as dependency
 
   useEffect(() => {
-    if (!userId) {
+    if (!userId || !targetUserId) {
       return;
     }
+
+    // Create socket connection once and store in ref
     const socket = createSocketConnection();
-    // As soon as the page loaded, the socket connection is made and joinChat event is emitted
+    socketRef.current = socket;
+
+    // Join chat room
     socket.emit("joinChat", {
       firstName: user.firstName,
       userId,
       targetUserId,
     });
 
+    // Listen for incoming messages
     socket.on("messageReceived", ({ firstName, lastName, text }) => {
-      console.log(firstName + " :  " + text);
-      setMessages((messages) => [...messages, { firstName, lastName, text }]);
+      console.log(firstName + " : " + text);
+      setMessages((prevMessages) => [...prevMessages, { firstName, lastName, text }]);
     });
 
+    // Cleanup on unmount
     return () => {
-      socket.disconnect();
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
     };
-  }, [userId, targetUserId]);
+  }, [userId, targetUserId, user.firstName]);
 
   const sendMessage = () => {
-    const socket = createSocketConnection();
-    socket.emit("sendMessage", {
+    if (!newMessage.trim() || !socketRef.current) {
+      return;
+    }
+
+    // Use existing socket connection from ref
+    socketRef.current.emit("sendMessage", {
       firstName: user.firstName,
       lastName: user.lastName,
       userId,
       targetUserId,
       text: newMessage,
     });
+    
     setNewMessage("");
+  };
+
+  // Handle Enter key to send message
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
   };
 
   return (
@@ -82,7 +116,7 @@ const Chat = () => {
               }
             >
               <div className="chat-header">
-                {`${msg.firstName}  ${msg.lastName}`}
+                {`${msg.firstName} ${msg.lastName}`}
                 <time className="text-xs opacity-50"> 2 hours ago</time>
               </div>
               <div className="chat-bubble">{msg.text}</div>
@@ -95,13 +129,20 @@ const Chat = () => {
         <input
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
-          className="flex-1 border border-gray-500 text-white rounded p-2"
-        ></input>
-        <button onClick={sendMessage} className="btn btn-secondary">
+          onKeyPress={handleKeyPress}
+          placeholder="Type a message..."
+          className="flex-1 border border-gray-500 text-white rounded p-2 bg-transparent"
+        />
+        <button 
+          onClick={sendMessage} 
+          className="btn btn-secondary"
+          disabled={!newMessage.trim()}
+        >
           Send
         </button>
       </div>
     </div>
   );
 };
+
 export default Chat;
